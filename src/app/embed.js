@@ -241,8 +241,11 @@ export function installViews({
     });
   if (!isEmbedded(location)) return () => {};
 
-  windowRef.document.body.classList.add('ui-embed');
-  shell.setCleanView?.(true);
+  // Digi may show the normal controls inside its authorized embed.
+  if (new URLSearchParams(location?.search || '').get('controls') !== '1') {
+    windowRef.document.body.classList.add('ui-embed');
+    shell.setCleanView?.(true);
+  }
   const stopRendering = isEmbeddedInline()
     ? keepPanelRendering(viewer, { windowRef })
     : () => {};
@@ -256,6 +259,20 @@ export function installViews({
       peer.postMessage(message, origin);
   };
   // Views apply one at a time, in the order they arrive.
+  // Let Digi read the actual map camera after manual pan/zoom as well.
+  const sendCamera = () => {
+    const position = viewer.camera.positionCartographic;
+    if (!position) return;
+    post({ type: 'gev:camera', camera: {
+      lat: Cesium.Math.toDegrees(position.latitude),
+      lon: Cesium.Math.toDegrees(position.longitude),
+      altitude_m: position.height,
+      heading_deg: Cesium.Math.toDegrees(viewer.camera.heading),
+      pitch_deg: Cesium.Math.toDegrees(viewer.camera.pitch),
+    }});
+  };
+  const removeCameraListener = viewer.camera.moveEnd?.addEventListener(sendCamera) || (() => {});
+  void ready.then(sendCamera);
   let queue = ready;
   const onMessage = (event) => {
     if (event.source !== peer || event.data?.type !== EMBED_VIEW_MESSAGE)
@@ -300,6 +317,7 @@ export function installViews({
   });
   return () => {
     stopRendering();
+    removeCameraListener();
     windowRef.removeEventListener('message', onMessage);
   };
 }

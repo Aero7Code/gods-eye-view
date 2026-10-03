@@ -1,3 +1,5 @@
+Digi integration in this owner fork: [sidebar globe, live agent queries and flight reporting](integrations/digi/README.md).
+
 <div align="center">
 
 # 🌐 God's Eye View

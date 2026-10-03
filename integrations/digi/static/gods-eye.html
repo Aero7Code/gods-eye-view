@@ -1,0 +1,10 @@
+<section id="godsEye" class="view page" hidden>
+<h1>God’s Eye View</h1><p>Explore the live globe yourself, or ask Digi to show a place or track a flight.</p>
+<form id="gev-place-form"><input id="gev-place" aria-label="Place" placeholder="Paris, France" required maxlength="160"><button>Show place</button><button type="button" id="gev-controls">Full controls</button><a href="http://127.0.0.1:4173" target="_blank" rel="noopener">Open full app</a></form>
+<form id="gev-flight-form"><input id="gev-flight" aria-label="Flight number" placeholder="Southwest 2456 / WN2456" required maxlength="40"><button>Track flight</button><label><input type="checkbox" id="gev-live"> Refresh flight every 30 seconds</label></form>
+<p id="gev-status" role="status">The globe loads when you open this panel.</p>
+<iframe id="gev-frame" title="God’s Eye View live globe" allow="fullscreen" referrerpolicy="no-referrer"></iframe>
+<pre id="gev-report"></pre>
+<details><summary>Flight path, sources and live query details</summary><pre id="gev-details"></pre></details>
+<details><summary>Explore live resources</summary><p>Choose a query to see its exact input schema. Results include source and freshness evidence.</p><button id="gev-load-tools" type="button">Load queries</button><select id="gev-tool" aria-label="Query"></select><pre id="gev-schema"></pre><textarea id="gev-args" aria-label="Query arguments" rows="5">{"area":{"place":"Paris, France"}}</textarea><button id="gev-run" type="button">Run query</button></details>
+</section>

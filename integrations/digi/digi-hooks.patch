@@ -1,0 +1,120 @@
+--- a/digi/app.py
++++ b/digi/app.py
+@@ -58,6 +58,7 @@
+ Follow the owner's current output-format instructions exactly. When asked for only a value, word, label or JSON, return only that content, without an introductory sentence or extra explanation. Current explicit formatting overrides general style preferences and retrieved examples.
+ For a self-contained question about facts supplied in the conversation, answer directly from those facts. The latest explicit correction overrides an older quoted note or archive. Distinguish fictional examples and quoted task descriptions from requests to act on the real laptop. Do not inspect projects, queue maintenance, calculate unrelated dates, or invent tool inputs when the answer is already supplied. Use tools for actual requested actions and calculations that need them.
+ You can generate actual images locally with generate_images, including multiple random images. Art QA automatically reviews candidates, expands correction prompts from detected problems, and tries up to 12 times per image. Only candidates passing both reviews without defects or uncertainty are delivered by generate_images; report when none passes. Never claim 100% error-free. Historical or explicitly repaired best-effort images retain their honest review labels. Use review_image for an existing image ID. Use repair_image for an explicit pixel rectangle and repair objective, preserving pixels outside it. generate_images supports auto, sdxl and dreamshaper profiles; auto starts with the established workflow and can try SDXL on a flagged-image retry. Use inspect_system area world for the current clock and attributed location evidence, and area security for private Comet laptop checks. Use inspect_hardware for the integrated ROG control board and supported firmware ranges; use laptop_control for structured ASUS and OS actions under owner SSS. Use inspect_connected_apps for automatically collected Comet, Wolfigy and Cerberus health and department ownership. Use inspect_system for actual hardware, services, models, image-backend status, installed tools and your own source. Read the observations, investigate relevant areas, then answer or act. Do not claim a whole-system scan when you inspected only one area. Never guess that an integration is missing before inspecting it.
++Use gods_eye to inspect and control God's Eye View, show places in the sidebar and query live aircraft, routes, tracks and regional signals. For area follow-ups use the fresh observed_view camera from operation state (actual manual pan/zoom), or the last selected view if browser observation is unavailable. Use catalog for exact query schemas. Report feed freshness and coverage; never invent flight positions, future paths or airline ETAs.
+ Use proton_status to inspect the Proton integration. Private mail reads use owner commands /proton inbox and /proton read UID in this same chat; do not ask for account passwords or claim mail was sent. Proton Calendar uses private ICS exports and reviewable event drafts, not live sync.
+ You have ten Personal agents workflows for briefing, goals, tutoring, spaced repetition, decisions, ideas, instructions, shopping, retrospectives and skill improvement. Use personal_lookup to read actual scoped records and local_toolbox for deterministic calculations and data work. Owner edits and recall grades are saved in Personal agents. Prefer local tools and reasoning; use Codex assistance for difficult unsolved tasks.
+ Research capabilities are already installed: use research_status with exactly {} to inspect research models and search health. Use research_report for evidence-based public research, analyze_document for an inbox document, and statistical_analysis for supported statistics. Read their results before answering; inspecting these capabilities does not require building extensions or asking Codex.
+@@ -210,6 +211,8 @@
+         self.images=ImageGenerator(self)
+         self.art=ArtReviewer(self)
+         self.system_scan=SystemScan(self)
++        from .gods_eye import GodsEye
++        self.gods_eye=GodsEye()
+         self.world=WorldContext(self.store.root)
+         self.problem_solver=ProblemSolver(self)
+         self.interface=InterfaceDeveloper(self)
+@@ -730,11 +733,25 @@
+         if job.get('state')=='completed' and not job.get('temporary'):
+             job['preference_offer']=self.store.preferences.pending(job.get('conversation'),latest=True)
+         if job.get('images'):job['images']=[a for a in job['images'] if self.art.approved(a['id'])]
+-        return {k:v for k,v in job.items() if k in ('id','conversation','state','text','error','tokens_per_second','seconds','temporary','user','phase','approval','external','skill_draft','sources','development_job','assisted','shared_context','images','system_evidence','recovery','backend_job','backend_revisions','incident_id','answer_verification','process_recall','reading_only','art_reviews','preference_offer','private_result','speaker','background_voice','restart')}
++        return {k:v for k,v in job.items() if k in ('id','conversation','state','text','error','tokens_per_second','seconds','temporary','user','phase','approval','external','skill_draft','sources','development_job','assisted','shared_context','images','system_evidence','recovery','backend_job','backend_revisions','incident_id','answer_verification','process_recall','reading_only','art_reviews','preference_offer','private_result','speaker','background_voice','restart','gods_eye')}
+     def generate(self,job,messages,text,temporary):
+         conn=http.client.HTTPConnection('127.0.0.1',self.ollama_port,timeout=150)
+         job['connection']=conn
+         try:
++            from .gods_eye import request as globe_request, render as globe_render
++            globe_intent = None if comprehension_request(text) else globe_request(text)
++            if globe_intent:
++                job['gods_eye_routed']=True
++                try:
++                    result=self.gods_eye.run(**globe_intent,job=job)
++                    job['text']=globe_render(result)
++                    job['gods_eye']=self.gods_eye.state()
++                except (ValueError,OSError) as exc:
++                    job['text']='God’s Eye View request could not complete: '+str(exc)
++                if job['stop'].is_set():return
++                if not temporary:job['text']=self.store.save_turn(job['conversation'],text,job['text'])
++                job.update(state='completed',phase='Finished')
++                return
+             from .weather import request as weather_request, run as weather_run
+             weather_intent = None if comprehension_request(text) else weather_request(text, messages, prior_weather=job.get('weather_context',False))
+             if weather_intent:
+@@ -920,6 +937,13 @@
+                     continue
+                 if name in ('inspect_hardware','test_camera_stream'):
+                     result=self.hardware.test_camera(arguments) if name=='test_camera_stream' else self.hardware.inspect(arguments.get('section','overview'))
++                    messages.append({'role':'assistant','content':job['text'],'thinking':thinking,'tool_calls':calls})
++                    messages.append({'role':'tool','tool_name':name,'content':json.dumps(result)[:50000]})
++                    continue
++                if name=='gods_eye':
++                    try:result=self.gods_eye.run(**arguments,job=job)
++                    except (ValueError,TypeError) as exc:result={'error':str(exc)}
++                    job['gods_eye']=self.gods_eye.state()
+                     messages.append({'role':'assistant','content':job['text'],'thinking':thinking,'tool_calls':calls})
+                     messages.append({'role':'tool','tool_name':name,'content':json.dumps(result)[:50000]})
+                     continue
+@@ -1120,6 +1144,8 @@
+         tools.append(CHAT_TOOL)
+         from .proton.service import TOOL as PROTON_TOOL
+         tools.append(PROTON_TOOL)
++        from .gods_eye import TOOL as GODS_EYE_TOOL
++        tools.append(GODS_EYE_TOOL)
+         from .hardware.service import TOOL as HARDWARE_TOOL
+         tools.append(HARDWARE_TOOL)
+         from .code_graph import TOOL as GRAPH_TOOL
+@@ -1193,7 +1219,7 @@
+         self.send_header('Cache-Control','no-store')
+         self.send_header('X-Content-Type-Options','nosniff')
+         self.send_header('Referrer-Policy','no-referrer')
+-        self.send_header('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self' blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
++        self.send_header('Content-Security-Policy',"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self' blob:; connect-src 'self'; frame-src http://127.0.0.1:4173; frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
+         if cookie: self.send_header('Set-Cookie',cookie)
+         self.end_headers()
+         try: self.wfile.write(raw)
+@@ -1212,6 +1238,8 @@
+         path=self.path.split('?',1)[0]
+         if path in ('/enterprise','/enterprise.html'):
+             self.send_response(302);self.send_header('Location','/#organization');self.send_header('Content-Length','0');self.end_headers();return
++        if path=='/gods-eye.js':return self.send(200,(BASE/'static/gods-eye.js').read_bytes(),'text/javascript')
++        if path=='/gods-eye.css':return self.send(200,(BASE/'static/gods-eye.css').read_bytes(),'text/css')
+         if path=='/speaker-profiles.css':return self.send(200,(BASE/'static/speaker-profiles.css').read_bytes(),'text/css')
+         if path in ('/art-review.js','/wake.js','/speaker-profiles.js','/recognition-test.js'):return self.send(200,(BASE/'static'/path[1:]).read_bytes(),'text/javascript')
+         if path in ('/hardware.js','/hardware.css'):
+@@ -1233,6 +1261,10 @@
+         if path=='/api/health': return self.send(200,{'healthy':True,'version':'0.12.1'})
+         if not self.authorized(): return self.send(401,{'error':'Open Digi from the application launcher to sign in.'})
+         if path=='/night-learning.js':return self.send(200,(BASE/'static/night-learning.js').read_bytes(),'text/javascript')
++        if path=='/api/gods-eye':return self.send(200,self.app.gods_eye.state())
++        if path=='/api/gods-eye/catalog':
++            try:return self.send(200,{'tools':self.app.gods_eye.catalog()})
++            except ValueError as exc:return self.send(503,{'error':str(exc)})
+         if path=='/api/night-learning':return self.send(200,self.app.night_learning.status())
+         if path.startswith('/api/hardware/fans/'):
+             try:return self.send(200,self.app.hardware.fan_profile(path.rsplit('/',1)[-1]))
+@@ -1332,6 +1364,8 @@
+             if not 0<length<=(23000000 if self.path=='/api/chat' else 1400000 if self.path in ('/api/voice/run','/api/voice/studio/reference-save','/api/voice/profiles/enroll') else 200000): raise ValueError('Invalid request size')
+             data=json.loads(self.rfile.read(length))
+             if not isinstance(data,dict): raise ValueError('Invalid request')
++            if self.path=='/api/gods-eye/observe':return self.send(200,self.app.gods_eye.observe(data.get('camera')))
++            if self.path=='/api/gods-eye/query':return self.send(200,self.app.gods_eye.run(**data))
+             if self.path=='/api/night-learning/start':return self.send(200,self.app.night_learning.start_now(data.get('seconds',18000)))
+             if self.path=='/api/night-learning/wake':return self.send(200,self.app.night_learning.wake())
+             if self.path=='/api/night-learning/configure':return self.send(200,self.app.night_learning.configure(data.get('enabled')))
+--- a/digi/unified_ui.py
++++ b/digi/unified_ui.py
+@@ -6,6 +6,10 @@
+ def compose(asset: bytes, static: Path) -> bytes:
+     """Keep conversation and active interface revision intact; no second shell."""
+     html = asset.decode('utf-8')
++    if 'id="godsEye"' not in html:
++        html=html.replace('</nav>','<button data-view="godsEye">🌐 God’s Eye View</button></nav>',1)
++        html=html.replace('</main>',(static/'gods-eye.html').read_text()+'</main>',1)
++        html=html.replace('</head>','<link rel="stylesheet" href="/gods-eye.css"><script src="/gods-eye.js" defer></script></head>',1)
+     if 'id="speakerProfiles"' not in html:
+         html=html.replace('</nav>','<button data-view="speakerProfiles">People &amp; voice profiles</button></nav>',1)
+         html=html.replace('</main>',(static/'speaker-profiles.html').read_text()+'</main>',1)
